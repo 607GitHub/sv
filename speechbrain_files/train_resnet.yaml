@@ -1,0 +1,89 @@
+# Edited by David Bikker on 2025-03-12
+
+# ############################################################################
+# Model: ResNet for Speaker verification
+# ############################################################################
+
+# Basic parameters
+seed: 1986
+__set_seed: !apply:torch.manual_seed [1986]
+output_folder: results/xvect_augment/1986
+save_folder: results/xvect_augment/1986/save
+train_log: results/xvect_augment/1986/train_log.txt
+
+# Data files
+data_folder: /localscratch/voxceleb1/
+                           # e.g. /path/to/Voxceleb
+train_annotation: results/xvect_augment/1986/save/train.csv
+valid_annotation: results/xvect_augment/1986/save/dev.csv
+
+# Feature parameters
+n_mels: 80
+
+# Pretrain folder (HuggingFace)
+pretrained_path: underdogliu1005/spkrec-resnet-voxceleb
+
+# Output parameters
+out_n_neurons: 7205
+
+# Model params
+compute_features: !new:speechbrain.lobes.features.Fbank
+    n_mels: !ref <n_mels>
+
+mean_var_norm: !new:speechbrain.processing.features.InputNormalization
+    norm_type: sentence
+    std_norm: False
+
+embedding_model: !new:speechbrain.lobes.models.ResNet.ResNet
+    input_size: !ref <n_mels>
+    channels: [128, 128, 256, 256]
+    strides: [1, 2, 2, 2]
+    block_sizes: [3, 4, 6, 3]
+    lin_neurons: 256
+
+classifier: !new:speechbrain.lobes.models.ResNet.Classifier
+    input_size: 256
+    out_neurons: !ref <out_n_neurons>
+
+mean_var_norm_emb: !new:speechbrain.processing.features.InputNormalization
+    norm_type: global
+    std_norm: False
+
+modules:
+    compute_features: !ref <compute_features>
+    mean_var_norm: !ref <mean_var_norm>
+    embedding_model: !ref <embedding_model>
+    mean_var_norm_emb: !ref <mean_var_norm_emb>
+    classifier: !ref <classifier>
+        
+label_encoder: !new:speechbrain.dataio.encoder.CategoricalEncoder
+
+        
+pretrainer: !new:speechbrain.utils.parameter_transfer.Pretrainer
+    loadables:
+        embedding_model: !ref <embedding_model>
+        classifier: !ref <classifier>
+    paths:
+        embedding_model: !ref <pretrained_path>/embedding_model.ckpt
+        classifier: !ref <pretrained_path>/classifier.ckpt
+
+
+opt_class: !name:torch.optim.Adam
+  lr: 0.001
+  weight_decay: 0.000002
+
+lr_annealing: !new:speechbrain.nnet.schedulers.LinearScheduler
+  initial_value: 0.001
+  final_value: 0.0001
+  epoch_count: 20
+
+# Logging + checkpoints
+train_logger: !new:speechbrain.utils.train_logger.FileTrainLogger
+  save_file: results/xvect_augment/1986/train_log.txt
+
+error_stats: !name:speechbrain.utils.metric_stats.MetricStats
+  metric: !name:speechbrain.nnet.losses.classification_error
+    reduction: batch
+
+checkpointer: !new:speechbrain.utils.checkpoints.Checkpointer
+  checkpoints_dir: results/xvect_augment/1986/save
